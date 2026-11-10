@@ -23,7 +23,7 @@ jobs:
           lint: false
           use-mathlib-cache: true
       - name: Elaborate the strengthened Stacks 0DSB consumer
-        run: lake build -j 2 StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke
+        run: lake build StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke
       - name: Confirm research patch scope
         run: |
           git diff --check HEAD^
