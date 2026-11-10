@@ -8,6 +8,7 @@ public import StacksFrontier.AlgebraicGeometry.Spaces.FiniteTypePermanence
 public import StacksFrontier.AlgebraicGeometry.Spaces.LocalRingDimension
 public import StacksFrontier.AlgebraicGeometry.Stacks.FiniteTypePointSmoothChart
 public import StacksFrontier.AlgebraicGeometry.Stacks.SmoothPresentationLocalRingDimension
+public import StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartIndependence
 public import StacksFrontier.AlgebraicGeometry.Stacks.TwoFibreProductSquareAlgebraicStack
 public import StacksFrontier.AlgebraicGeometry.Stacks.VersalRingPresentation
 public import StacksFrontier.AlgebraicGeometry.Stacks.NoetherianAlgebraicStack
@@ -611,7 +612,8 @@ theorem hasLocalRingDimension_of_isVersal (D : VersalSituation.{u, w})
       (_ : Deformation.restrictedCoyoneda Bv ≅
         (Deformation.versalGroupoid C.projection hp ξ).arrows),
       ∃ m n : ℕ, ringKrullDim ξ.base = m ∧ ringKrullDim Bv = n ∧
-        HasLocalRingDimension D.B D.S D.hS D.𝒳 (isLocallyNoetherianStack_of_versalSituation D)
+        HasLocalRingDimensionAtSomeChart D.B D.S D.hS D.𝒳
+          (isLocallyNoetherianStack_of_versalSituation D)
           (objectPoint D.B D.S D.hS iΛ x₀ hx₀)
           (isFiniteTypePoint_objectPoint D iΛ hiΛ x₀ hx₀ hfinite) (2 * (m : ℤ) - (n : ℤ)) := by
   intro C hp ξ hξ Bv e
@@ -671,7 +673,7 @@ theorem hasLocalRingDimension_of_isVersal (D : VersalSituation.{u, w})
     eV₀ eQ' δ
   obtain ⟨hptL, hpt⟩ := pointMap_comp_algebraMap_eq D.B D.S D.hS π hu₀ hw₀ huL hπ
   let ηL := (CatFiberedInGroupoids.homFunctor g.hom).map (Over.homMk π rfl : uL ⟶ u₀) ≫ η
-  refine ⟨a₁, b₁, h1, h2, V, g, T, hT, Q, hQ, eV₀, eQ', δ, pν.class D.B D.S D.hS _, hg, ?_,
+  refine ⟨a₁, b₁, h1, h2, V, g, T, hT, Q, hQ, eQ', δ, pν.class D.B D.S D.hS _, hg, ?_,
     pointsMap_chartFieldPoint g iΛ x₀ hx₀ uL huL ηL, ?_⟩
   · rw [Space.pointsToScheme_class, schemePoint_chartFieldPoint, hpt]
     have hcomp : pointMap hu₀ ≫ D.B.inclusion.map V.hom =
@@ -765,7 +767,8 @@ theorem hasLocalRingDimension_of_versalCogroupoid (D : VersalSituation.{u, w})
         Deformation.GroupoidInFunctors.restrict P.groupoidInFunctors
           Deformation.artinianToComplete) →
       ∃ m n : ℕ, ringKrullDim P.objects = m ∧ ringKrullDim P.arrows = n ∧
-        HasLocalRingDimension D.B D.S D.hS D.𝒳 (isLocallyNoetherianStack_of_versalSituation D)
+        HasLocalRingDimensionAtSomeChart D.B D.S D.hS D.𝒳
+          (isLocallyNoetherianStack_of_versalSituation D)
           (objectPoint D.B D.S D.hS iΛ x₀ hx₀)
           (isFiniteTypePoint_objectPoint D iΛ hiΛ x₀ hx₀ hfinite) (2 * (m : ℤ) - (n : ℤ)) := by
   intro C hp ξ hξ P hPo ⟨eG⟩
