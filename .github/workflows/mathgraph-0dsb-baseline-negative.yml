@@ -1,7 +1,7 @@
-# CANDIDATE ONLY. NOT COMMITTED, NOT TRIGGERED. This is an evidence-first replacement
-# for .github/workflows/mathgraph-0dsb-baseline-negative.yml on the SAME research branch.
+# Bounded research-only V3.2 native gate. This is not proof verification by itself.
+# Only executes on the explicit original research branch.
 # The branch's existing cache is NOT accessible to a sibling branch.
-name: MathGraph Stacks 0DSB bounded structured native gate V3 (candidate)
+name: MathGraph Stacks 0DSB bounded structured native gate V3.2
 
 on:
   push:
@@ -66,11 +66,28 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
+          # the bounded compiler process so timeout/kill status can be captured.
+          set +e
           timeout --verbose --signal=INT --kill-after=20s 12m lake build \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
             > "$RUNNER_TEMP/original_segment1.log" 2>&1
           rc=$?
+          set -e
+          # Only a native success or a timeout carrying GNU timeout's explicit
+          # signal receipt is an admissible checkpoint continuation. Never
+          # reclassify an unexplained exit 137 (or runner loss) as timeout.
+          if [ "$rc" -eq 0 ]; then
+            echo "Native segment completed successfully (exit 0)."
+          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
+               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/original_segment1.log"; then
+            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
+          else
+            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
+            tail -n 40 "$RUNNER_TEMP/original_segment1.log" || true
+            exit 1
+          fi
           echo "Segment 1 exit: $rc"; tail -n 15 "$RUNNER_TEMP/original_segment1.log"
           if [ -d .lake/build ]; then du -sh .lake/build; fi
           exit 0  # controlled incomplete compilation never means proof success
@@ -84,11 +101,28 @@ jobs:
         id: deps
         run: |
           set -uo pipefail
+          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
+          # the bounded compiler process so timeout/kill status can be captured.
+          set +e
           timeout --verbose --signal=INT --kill-after=20s 38m lake build \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
             > "$RUNNER_TEMP/original_segment2.log" 2>&1
           rc=$?
+          set -e
+          # Only a native success or a timeout carrying GNU timeout's explicit
+          # signal receipt is an admissible checkpoint continuation. Never
+          # reclassify an unexplained exit 137 (or runner loss) as timeout.
+          if [ "$rc" -eq 0 ]; then
+            echo "Native segment completed successfully (exit 0)."
+          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
+               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/original_segment2.log"; then
+            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
+          else
+            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
+            tail -n 40 "$RUNNER_TEMP/original_segment2.log" || true
+            exit 1
+          fi
           echo "Segment 2 exit: $rc"; tail -n 15 "$RUNNER_TEMP/original_segment2.log"
           if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
           if [ -d .lake/build ]; then du -sh .lake/build; fi
@@ -214,11 +248,28 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
+          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
+          # the bounded compiler process so timeout/kill status can be captured.
+          set +e
           timeout --verbose --signal=INT --kill-after=20s 12m lake build \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
             > "$RUNNER_TEMP/repaired_segment1.log" 2>&1
           rc=$?
+          set -e
+          # Only a native success or a timeout carrying GNU timeout's explicit
+          # signal receipt is an admissible checkpoint continuation. Never
+          # reclassify an unexplained exit 137 (or runner loss) as timeout.
+          if [ "$rc" -eq 0 ]; then
+            echo "Native segment completed successfully (exit 0)."
+          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
+               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/repaired_segment1.log"; then
+            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
+          else
+            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
+            tail -n 40 "$RUNNER_TEMP/repaired_segment1.log" || true
+            exit 1
+          fi
           echo "Repaired segment 1 exit: $rc"; tail -n 15 "$RUNNER_TEMP/repaired_segment1.log"
           if [ -d .lake/build ]; then du -sh .lake/build; fi
           exit 0
@@ -232,11 +283,28 @@ jobs:
         id: deps
         run: |
           set -uo pipefail
+          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
+          # the bounded compiler process so timeout/kill status can be captured.
+          set +e
           timeout --verbose --signal=INT --kill-after=20s 38m lake build \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
             > "$RUNNER_TEMP/repaired_segment2.log" 2>&1
           rc=$?
+          set -e
+          # Only a native success or a timeout carrying GNU timeout's explicit
+          # signal receipt is an admissible checkpoint continuation. Never
+          # reclassify an unexplained exit 137 (or runner loss) as timeout.
+          if [ "$rc" -eq 0 ]; then
+            echo "Native segment completed successfully (exit 0)."
+          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
+               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/repaired_segment2.log"; then
+            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
+          else
+            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
+            tail -n 40 "$RUNNER_TEMP/repaired_segment2.log" || true
+            exit 1
+          fi
           echo "Repaired segment 2 exit: $rc"; tail -n 15 "$RUNNER_TEMP/repaired_segment2.log"
           if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
           if [ -d .lake/build ]; then du -sh .lake/build; fi
