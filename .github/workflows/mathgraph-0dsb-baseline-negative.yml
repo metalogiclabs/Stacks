@@ -1,184 +1,290 @@
-name: MathGraph Stacks 0DSB checkpointed native contract
+# CANDIDATE ONLY. NOT COMMITTED, NOT TRIGGERED. This is an evidence-first replacement
+# for .github/workflows/mathgraph-0dsb-baseline-negative.yml on the SAME research branch.
+# The branch's existing cache is NOT accessible to a sibling branch.
+name: MathGraph Stacks 0DSB bounded structured native gate V3 (candidate)
 
 on:
   push:
-    branches:
-      - mathgraph/0dsb_canonical_negative_control
+    branches: [mathgraph/0dsb_canonical_negative_control]
+    paths:
+      - .github/workflows/mathgraph-0dsb-baseline-negative.yml
+      - .github/scripts/mathgraph_0dsb_gate_v3.py
+      - .github/scripts/mathgraph_0dsb_capture_v3.py
   workflow_dispatch:
 
 permissions:
   contents: read
 
-# The original source and repaired source use the exact same downstream test blob.
-# Both jobs run on the SAME branch so GitHub's branch-scoped cache can be reused.
-# A job may finish with a CHECKPOINT/UNKNOWN verdict; this is not a proof result.
 jobs:
-  baseline_checkpoint:
-    name: Original-source bounded build (checkpoint or expected RED)
+  original:
+    name: Original pinned source (native structured negative control)
     runs-on: ubuntu-latest
-    timeout-minutes: 210
+    timeout-minutes: 120
     outputs:
-      verdict: ${{ steps.build.outputs.verdict }}
+      verdict: ${{ steps.verdict.outputs.verdict }}
     steps:
       - uses: actions/checkout@v4
-      - name: Verify the pinned downstream witness
-        shell: bash
+        with:
+          fetch-depth: 0
+      - name: Require full unchanged original source and identical consumer
         run: |
-          set -euo pipefail
-          actual="$(git hash-object StacksFrontier/AlgebraicGeometry/Stacks/MathGraph0DSBCanonicalSmoke.lean)"
-          test "$actual" = "6f6c582bc7843d814dfaba26424d50af0a59a006"
-          echo "Original-source control witness blob: $actual"
-          git rev-parse HEAD
-      - name: Set up pinned Lean and Mathlib cache
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, '.github/scripts')
+          from mathgraph_0dsb_capture_v3 import preflight
+          print(preflight('original'))
+          PY
+      - name: Pin Lean and restore Mathlib dependencies
         uses: leanprover/lean-action@v1
         with:
           build: false
           test: false
           lint: false
           use-mathlib-cache: true
-      - name: Restore latest original-source build checkpoint
+      - name: Restore newest original source snapshot
         id: restore
         uses: actions/cache/restore@v4
         with:
           path: .lake/build
-          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+          key: mathgraph-stacks-0dsb-v3-original-${{ github.run_id }}-${{ github.run_attempt }}-restore
           restore-keys: |
-            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-
-      - name: Build original source for at most 140 minutes
-        id: build
+            mathgraph-stacks-0dsb-v3-original-
+            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2
+      - name: Require and record actual restored checkpoint key
+        env:
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+        run: |
+          case "$MATCHED_KEY" in
+            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2|mathgraph-stacks-0dsb-v3-original-*) ;;
+            *) echo "Unexpected or missing original cache key: $MATCHED_KEY; STOP / UNKNOWN"; exit 1 ;;
+          esac
+          echo "Restored original cache key: $MATCHED_KEY"
+      # Two bounded segments, not the consumer target: imports can complete on
+      # ORIGINAL source without the expected consumer mismatch terminating Lake.
+      - name: Compile ONLY imports (segment 1, 12m)
         shell: bash
         run: |
           set -uo pipefail
-          log="$RUNNER_TEMP/mathgraph-original.log"
-          echo "Previous checkpoint hit: ${{ steps.restore.outputs.cache-hit }}"
-          echo "Compiling the UNCHANGED source; expected result is a consumer type mismatch."
-          set +e
-          timeout --signal=INT --kill-after=30s 140m lake build StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke 2>&1 | tee "$log"
-          build_status="${PIPESTATUS[0]}"
-          set -e
-          echo "Native build exit status: $build_status"
-          if [ -d .lake/build ]; then
-            du -sh .lake/build
-            find .lake/build -type f -name '*.olean' | wc -l
-          fi
-          if [ "$build_status" -eq 124 ]; then
-            echo "verdict=checkpoint" >> "$GITHUB_OUTPUT"
-            echo "CHECKPOINT / UNKNOWN: compile window ended; no theorem verdict."
-          elif [ "$build_status" -ne 0 ] &&
-               grep -Eiq 'type mismatch|application type mismatch' "$log" &&
-               grep -Fq 'MathGraph0DSBCanonicalSmoke.lean' "$log"; then
-            echo "verdict=negative-pass" >> "$GITHUB_OUTPUT"
-            echo "EXPECTED RED: original 0DSB cannot discharge the canonical consumer."
-          else
-            echo "verdict=unknown" >> "$GITHUB_OUTPUT"
-            echo "UNKNOWN: build terminated without the expected original-source mismatch."
-          fi
-      - name: Save completed original-source build objects
-        if: always()
+          timeout --verbose --signal=INT --kill-after=20s 12m lake build \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
+            > "$RUNNER_TEMP/original_segment1.log" 2>&1
+          rc=$?
+          echo "Segment 1 exit: $rc"; tail -n 15 "$RUNNER_TEMP/original_segment1.log"
+          if [ -d .lake/build ]; then du -sh .lake/build; fi
+          exit 0  # controlled incomplete compilation never means proof success
+      - name: Save snapshot after segment 1 (must see saved cache in logs)
         uses: actions/cache/save@v4
         with:
           path: .lake/build
-          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: State the original-source verification boundary
-        if: always()
+          key: mathgraph-stacks-0dsb-v3-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
+      - name: Compile ONLY imports (segment 2, 38m)
+        shell: bash
+        id: deps
+        run: |
+          set -uo pipefail
+          timeout --verbose --signal=INT --kill-after=20s 38m lake build \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
+            > "$RUNNER_TEMP/original_segment2.log" 2>&1
+          rc=$?
+          echo "Segment 2 exit: $rc"; tail -n 15 "$RUNNER_TEMP/original_segment2.log"
+          if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
+          if [ -d .lake/build ]; then du -sh .lake/build; fi
+          exit 0
+      - name: Save snapshot after segment 2
+        uses: actions/cache/save@v4
+        with:
+          path: .lake/build
+          key: mathgraph-stacks-0dsb-v3-original-${{ github.run_id }}-${{ github.run_attempt }}-s2
+      - name: Capture original native Lean JSON (only after imports built)
+        if: steps.deps.outputs.ready == 'true'
         shell: bash
         run: |
-          set -euo pipefail
-          verdict="${{ steps.build.outputs.verdict }}"
-          echo "### Original source: $verdict" >> "$GITHUB_STEP_SUMMARY"
-          echo "Unchanged upstream source pin: 5ed82d14634e8d9576bb844c7bd4e3da66d450e7" >> "$GITHUB_STEP_SUMMARY"
-          echo "Identical consumer blob: 6f6c582bc7843d814dfaba26424d50af0a59a006" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$verdict" = "checkpoint" ]; then
-            echo "Compilation is incomplete. Re-run the workflow to restore this checkpoint." >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$verdict" = "negative-pass" ]; then
-            echo "Observed intended type mismatch at the downstream consumer; repaired check may start." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "Original-source negative control is NOT qualified." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          python3 .github/scripts/mathgraph_0dsb_capture_v3.py --source original \
+            --outdir "$RUNNER_TEMP/mathgraph0dsb_original" --timeout-seconds 900
+      - name: Classify original DIRECT downstream contract fail-closed
+        if: always()
+        id: verdict
+        shell: bash
+        run: |
+          set -u
+          dir="$RUNNER_TEMP/mathgraph0dsb_original"
+          if [ ! -f "$dir/receipt.json" ]; then
+            echo 'verdict=unknown' >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          python3 .github/scripts/mathgraph_0dsb_gate_v3.py --source original \
+            --receipt "$dir/receipt.json" --stdout "$dir/consumer.ndjson" \
+            --stderr "$dir/consumer.stderr" > "$RUNNER_TEMP/original_gate.json" || true
+          cat "$RUNNER_TEMP/original_gate.json"
+          if python3 - "$RUNNER_TEMP/original_gate.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]));sys.exit(0 if x['state']=='ORIGINAL_DIRECT_CONTRACT_RED_CANDIDATE' else 1)
+          PY
+          then
+            echo 'verdict=original-red' >> "$GITHUB_OUTPUT"
+          else
+            echo 'verdict=unknown' >> "$GITHUB_OUTPUT"
+          fi
+      - name: Upload original diagnostic and build-segment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathgraph-stacks-v3-original-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mathgraph0dsb_original/
+            ${{ runner.temp }}/original_gate.json
+            ${{ runner.temp }}/original_segment1.log
+            ${{ runner.temp }}/original_segment2.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Preserve exact original evidence summary
+        if: always()
+        run: |
+          echo 'Original RED only if the structured compiler gate explicitly qualifies the direct pinned 0DSB application. The numerical original-side diagnostic remains separately recorded. All other outcomes remain UNKNOWN.' >> "$GITHUB_STEP_SUMMARY"
 
-  repaired_contract:
-    name: Repaired source (checkpoint or GREEN)
-    needs: baseline_checkpoint
-    if: needs.baseline_checkpoint.outputs.verdict == 'negative-pass'
+      - name: Enforce UNKNOWN is a failed job, never a green badge
+        if: always()
+        shell: bash
+        env:
+          QUALIFIED_VERDICT: ${{ steps.verdict.outputs.verdict }}
+        run: |
+          if [ "$QUALIFIED_VERDICT" != original-red ]; then
+            echo '::error::STOP / UNKNOWN — no verified original-source RED; workflow must not be green.'
+            exit 1
+          fi
+          echo 'Original source qualified only for direct consumer-specific RED; repaired gate still required.'
+
+  repaired:
+    name: Repaired pinned source (native structured positive control)
+    needs: original
+    if: needs.original.outputs.verdict == 'original-red'
     runs-on: ubuntu-latest
-    timeout-minutes: 210
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
-          # This is the already-reviewed RESEARCH repair, not the upstream PR candidate.
           ref: e1199c53e4822beaaaca1bf801f66448b5e69e7f
-      - name: Verify source and identical downstream witness
-        shell: bash
+          fetch-depth: 0
+      # Fetch verifier tools by the *immutable triggering workflow commit* into a
+      # separate directory; the repaired checkout itself remains byte-for-byte pinned.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: _mathgraph_verifier
+          fetch-depth: 1
+      - name: Require exact repair source, identical consumer and frozen helper version
         run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "e1199c53e4822beaaaca1bf801f66448b5e69e7f"
-          actual="$(git hash-object StacksFrontier/AlgebraicGeometry/Stacks/MathGraph0DSBCanonicalSmoke.lean)"
-          test "$actual" = "6f6c582bc7843d814dfaba26424d50af0a59a006"
-          echo "Repair source SHA: $(git rev-parse HEAD)"
-          echo "Identical downstream witness blob: $actual"
-      - name: Set up pinned Lean and Mathlib cache
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, '_mathgraph_verifier/.github/scripts')
+          from mathgraph_0dsb_capture_v3 import preflight
+          print(preflight('repaired'))
+          PY
+      - name: Pin Lean and restore Mathlib dependencies
         uses: leanprover/lean-action@v1
         with:
           build: false
           test: false
           lint: false
           use-mathlib-cache: true
-      - name: Restore repaired checkpoint or original-source dependencies
+      - name: Restore latest repaired snapshot or compatible original build objects
         id: restore
         uses: actions/cache/restore@v4
         with:
           path: .lake/build
-          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-repaired-${{ github.run_id }}-${{ github.run_attempt }}
+          fail-on-cache-miss: true
+          key: mathgraph-stacks-0dsb-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}-restore
           restore-keys: |
-            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-repaired-
-            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-
-      - name: Build the same downstream witness for at most 140 minutes
-        id: build
+            mathgraph-stacks-0dsb-v3-repaired-
+            mathgraph-stacks-0dsb-v3-original-
+            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2
+      - name: Require and record actual restored checkpoint key
+        env:
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+        run: |
+          case "$MATCHED_KEY" in
+            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2|mathgraph-stacks-0dsb-v3-original-*|mathgraph-stacks-0dsb-v3-repaired-*) ;;
+            *) echo "Unexpected or missing repaired-compatible cache key: $MATCHED_KEY; STOP / UNKNOWN"; exit 1 ;;
+          esac
+          echo "Restored repaired-compatible cache key: $MATCHED_KEY"
+      - name: Rebuild repaired imports (segment 1, 12m)
         shell: bash
         run: |
           set -uo pipefail
-          log="$RUNNER_TEMP/mathgraph-repaired.log"
-          echo "Restored previous checkpoint: ${{ steps.restore.outputs.cache-hit }}"
-          set +e
-          timeout --signal=INT --kill-after=30s 140m lake build StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke 2>&1 | tee "$log"
-          build_status="${PIPESTATUS[0]}"
-          set -e
-          echo "Native build exit status: $build_status"
-          if [ -d .lake/build ]; then
-            du -sh .lake/build
-            find .lake/build -type f -name '*.olean' | wc -l
-          fi
-          if [ "$build_status" -eq 0 ]; then
-            echo "verdict=positive-pass" >> "$GITHUB_OUTPUT"
-            echo "GREEN: repaired theorem elaborates both mathematical consumers."
-          elif [ "$build_status" -eq 124 ]; then
-            echo "verdict=checkpoint" >> "$GITHUB_OUTPUT"
-            echo "CHECKPOINT / UNKNOWN: repaired compilation incomplete."
-          else
-            echo "verdict=unknown" >> "$GITHUB_OUTPUT"
-            echo "UNKNOWN or REJECTED: repaired build failed; inspect exact Lean diagnostics."
-          fi
-      - name: Save completed repaired-source build objects
-        if: always()
+          timeout --verbose --signal=INT --kill-after=20s 12m lake build \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
+            > "$RUNNER_TEMP/repaired_segment1.log" 2>&1
+          rc=$?
+          echo "Repaired segment 1 exit: $rc"; tail -n 15 "$RUNNER_TEMP/repaired_segment1.log"
+          if [ -d .lake/build ]; then du -sh .lake/build; fi
+          exit 0
+      - name: Save repaired snapshot after segment 1
         uses: actions/cache/save@v4
         with:
           path: .lake/build
-          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-repaired-${{ github.run_id }}-${{ github.run_attempt }}
-      - name: State the repaired-source verification boundary
+          key: mathgraph-stacks-0dsb-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}-s1
+      - name: Rebuild repaired imports (segment 2, 38m)
+        shell: bash
+        id: deps
+        run: |
+          set -uo pipefail
+          timeout --verbose --signal=INT --kill-after=20s 38m lake build \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
+            > "$RUNNER_TEMP/repaired_segment2.log" 2>&1
+          rc=$?
+          echo "Repaired segment 2 exit: $rc"; tail -n 15 "$RUNNER_TEMP/repaired_segment2.log"
+          if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
+          if [ -d .lake/build ]; then du -sh .lake/build; fi
+          exit 0
+      - name: Save repaired snapshot after segment 2
+        uses: actions/cache/save@v4
+        with:
+          path: .lake/build
+          key: mathgraph-stacks-0dsb-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}-s2
+      - name: Capture repaired native Lean JSON (only after imports rebuilt)
+        if: steps.deps.outputs.ready == 'true'
+        shell: bash
+        run: |
+          python3 _mathgraph_verifier/.github/scripts/mathgraph_0dsb_capture_v3.py \
+            --source repaired --outdir "$RUNNER_TEMP/mathgraph0dsb_repaired" --timeout-seconds 900
+      - name: Classify GREEN and BOTH exact axiom outputs fail-closed
         if: always()
         shell: bash
         run: |
-          set -euo pipefail
-          verdict="${{ steps.build.outputs.verdict }}"
-          echo "### Repaired source: $verdict" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pinned research repair: e1199c53e4822beaaaca1bf801f66448b5e69e7f" >> "$GITHUB_STEP_SUMMARY"
-          echo "Identical consumer blob: 6f6c582bc7843d814dfaba26424d50af0a59a006" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$verdict" = "positive-pass" ]; then
-            echo "Both consumers elaborated natively; check printed axioms before upstream promotion." >> "$GITHUB_STEP_SUMMARY"
-          elif [ "$verdict" = "checkpoint" ]; then
-            echo "Compilation incomplete. Re-run the workflow to resume the repaired checkpoint." >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "The proposed repair is NOT native-qualified." >> "$GITHUB_STEP_SUMMARY"
-            exit 1
+          set -u
+          dir="$RUNNER_TEMP/mathgraph0dsb_repaired"
+          if [ ! -f "$dir/receipt.json" ]; then
+            echo 'UNKNOWN: No completed repaired Lean diagnostic capture.'
+            exit 2
           fi
+          python3 _mathgraph_verifier/.github/scripts/mathgraph_0dsb_gate_v3.py \
+            --source repaired --receipt "$dir/receipt.json" \
+            --stdout "$dir/consumer.ndjson" --stderr "$dir/consumer.stderr" \
+            > "$RUNNER_TEMP/repaired_gate.json"
+          cat "$RUNNER_TEMP/repaired_gate.json"
+          python3 - "$RUNNER_TEMP/repaired_gate.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          sys.exit(0 if x['state']=='REPAIRED_BOTH_CONSUMERS_GREEN_AXIOMS_CANDIDATE' else 2)
+          PY
+      - name: Upload repaired diagnostic and build-segment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathgraph-stacks-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/mathgraph0dsb_repaired/
+            ${{ runner.temp }}/repaired_gate.json
+            ${{ runner.temp }}/repaired_segment1.log
+            ${{ runner.temp }}/repaired_segment2.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: State repaired qualification boundary
+        if: always()
+        run: |
+          echo 'A passing RED/GREEN pair is source-relative consumer contract evidence only; it is NOT an independent geometric counterexample or whole Stacks audit.' >> "$GITHUB_STEP_SUMMARY"
