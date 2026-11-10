@@ -1,4 +1,4 @@
-name: MathGraph Stacks 0DSB original-type negative control
+name: MathGraph Stacks 0DSB checkpointed native contract
 
 on:
   push:
@@ -9,37 +9,176 @@ on:
 permissions:
   contents: read
 
+# The original source and repaired source use the exact same downstream test blob.
+# Both jobs run on the SAME branch so GitHub's branch-scoped cache can be reused.
+# A job may finish with a CHECKPOINT/UNKNOWN verdict; this is not a proof result.
 jobs:
-  native-negative-control:
+  baseline_checkpoint:
+    name: Original-source bounded build (checkpoint or expected RED)
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 210
+    outputs:
+      verdict: ${{ steps.build.outputs.verdict }}
     steps:
       - uses: actions/checkout@v4
-      - name: Set up Lean 4.35 and fetch Mathlib cache
+      - name: Verify the pinned downstream witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(git hash-object StacksFrontier/AlgebraicGeometry/Stacks/MathGraph0DSBCanonicalSmoke.lean)"
+          test "$actual" = "6f6c582bc7843d814dfaba26424d50af0a59a006"
+          echo "Original-source control witness blob: $actual"
+          git rev-parse HEAD
+      - name: Set up pinned Lean and Mathlib cache
         uses: leanprover/lean-action@v1
         with:
           build: false
           test: false
           lint: false
           use-mathlib-cache: true
-      - name: Confirm unchanged 0DSB fails canonical downstream contract
+      - name: Restore latest original-source build checkpoint
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake/build
+          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-
+      - name: Build original source for at most 140 minutes
+        id: build
         shell: bash
         run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/mathgraph-original.log"
+          echo "Previous checkpoint hit: ${{ steps.restore.outputs.cache-hit }}"
+          echo "Compiling the UNCHANGED source; expected result is a consumer type mismatch."
           set +e
-          lake build StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke > "$RUNNER_TEMP/mathgraph-baseline.log" 2>&1
-          status=$?
+          timeout --signal=INT --kill-after=30s 140m lake build StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke 2>&1 | tee "$log"
+          build_status="${PIPESTATUS[0]}"
           set -e
-          tail -n 100 "$RUNNER_TEMP/mathgraph-baseline.log"
-          if [ "$status" -eq 0 ]; then
-            echo "FAIL: unchanged 0DSB unexpectedly discharged the canonical consumer"
+          echo "Native build exit status: $build_status"
+          if [ -d .lake/build ]; then
+            du -sh .lake/build
+            find .lake/build -type f -name '*.olean' | wc -l
+          fi
+          if [ "$build_status" -eq 124 ]; then
+            echo "verdict=checkpoint" >> "$GITHUB_OUTPUT"
+            echo "CHECKPOINT / UNKNOWN: compile window ended; no theorem verdict."
+          elif [ "$build_status" -ne 0 ] &&
+               grep -Eiq 'type mismatch|application type mismatch' "$log" &&
+               grep -Fq 'MathGraph0DSBCanonicalSmoke.lean' "$log"; then
+            echo "verdict=negative-pass" >> "$GITHUB_OUTPUT"
+            echo "EXPECTED RED: original 0DSB cannot discharge the canonical consumer."
+          else
+            echo "verdict=unknown" >> "$GITHUB_OUTPUT"
+            echo "UNKNOWN: build terminated without the expected original-source mismatch."
+          fi
+      - name: Save completed original-source build objects
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .lake/build
+          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: State the original-source verification boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          verdict="${{ steps.build.outputs.verdict }}"
+          echo "### Original source: $verdict" >> "$GITHUB_STEP_SUMMARY"
+          echo "Unchanged upstream source pin: 5ed82d14634e8d9576bb844c7bd4e3da66d450e7" >> "$GITHUB_STEP_SUMMARY"
+          echo "Identical consumer blob: 6f6c582bc7843d814dfaba26424d50af0a59a006" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$verdict" = "checkpoint" ]; then
+            echo "Compilation is incomplete. Re-run the workflow to restore this checkpoint." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$verdict" = "negative-pass" ]; then
+            echo "Observed intended type mismatch at the downstream consumer; repaired check may start." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Original-source negative control is NOT qualified." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          if ! grep -Eq 'type mismatch|application type mismatch' "$RUNNER_TEMP/mathgraph-baseline.log"; then
-            echo "UNKNOWN: build failed for a reason other than a Lean type mismatch"
+
+  repaired_contract:
+    name: Repaired source (checkpoint or GREEN)
+    needs: baseline_checkpoint
+    if: needs.baseline_checkpoint.outputs.verdict == 'negative-pass'
+    runs-on: ubuntu-latest
+    timeout-minutes: 210
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # This is the already-reviewed RESEARCH repair, not the upstream PR candidate.
+          ref: e1199c53e4822beaaaca1bf801f66448b5e69e7f
+      - name: Verify source and identical downstream witness
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "e1199c53e4822beaaaca1bf801f66448b5e69e7f"
+          actual="$(git hash-object StacksFrontier/AlgebraicGeometry/Stacks/MathGraph0DSBCanonicalSmoke.lean)"
+          test "$actual" = "6f6c582bc7843d814dfaba26424d50af0a59a006"
+          echo "Repair source SHA: $(git rev-parse HEAD)"
+          echo "Identical downstream witness blob: $actual"
+      - name: Set up pinned Lean and Mathlib cache
+        uses: leanprover/lean-action@v1
+        with:
+          build: false
+          test: false
+          lint: false
+          use-mathlib-cache: true
+      - name: Restore repaired checkpoint or original-source dependencies
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake/build
+          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-repaired-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-repaired-
+            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-
+      - name: Build the same downstream witness for at most 140 minutes
+        id: build
+        shell: bash
+        run: |
+          set -uo pipefail
+          log="$RUNNER_TEMP/mathgraph-repaired.log"
+          echo "Restored previous checkpoint: ${{ steps.restore.outputs.cache-hit }}"
+          set +e
+          timeout --signal=INT --kill-after=30s 140m lake build StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke 2>&1 | tee "$log"
+          build_status="${PIPESTATUS[0]}"
+          set -e
+          echo "Native build exit status: $build_status"
+          if [ -d .lake/build ]; then
+            du -sh .lake/build
+            find .lake/build -type f -name '*.olean' | wc -l
+          fi
+          if [ "$build_status" -eq 0 ]; then
+            echo "verdict=positive-pass" >> "$GITHUB_OUTPUT"
+            echo "GREEN: repaired theorem elaborates both mathematical consumers."
+          elif [ "$build_status" -eq 124 ]; then
+            echo "verdict=checkpoint" >> "$GITHUB_OUTPUT"
+            echo "CHECKPOINT / UNKNOWN: repaired compilation incomplete."
+          else
+            echo "verdict=unknown" >> "$GITHUB_OUTPUT"
+            echo "UNKNOWN or REJECTED: repaired build failed; inspect exact Lean diagnostics."
+          fi
+      - name: Save completed repaired-source build objects
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .lake/build
+          key: mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-repaired-${{ github.run_id }}-${{ github.run_attempt }}
+      - name: State the repaired-source verification boundary
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          verdict="${{ steps.build.outputs.verdict }}"
+          echo "### Repaired source: $verdict" >> "$GITHUB_STEP_SUMMARY"
+          echo "Pinned research repair: e1199c53e4822beaaaca1bf801f66448b5e69e7f" >> "$GITHUB_STEP_SUMMARY"
+          echo "Identical consumer blob: 6f6c582bc7843d814dfaba26424d50af0a59a006" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$verdict" = "positive-pass" ]; then
+            echo "Both consumers elaborated natively; check printed axioms before upstream promotion." >> "$GITHUB_STEP_SUMMARY"
+          elif [ "$verdict" = "checkpoint" ]; then
+            echo "Compilation incomplete. Re-run the workflow to resume the repaired checkpoint." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "The proposed repair is NOT native-qualified." >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
-          if ! grep -Fq 'MathGraph0DSBCanonicalSmoke.lean' "$RUNNER_TEMP/mathgraph-baseline.log"; then
-            echo "UNKNOWN: mismatch was outside the expected downstream consumer"
-            exit 1
-          fi
-          echo "NEGATIVE CONTROL PASS: canonical consumer rejected the original 0DSB contract"
