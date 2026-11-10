@@ -1,0 +1,30 @@
+name: MathGraph Stacks 0DSA-0DSB canonical contract
+
+on:
+  push:
+    branches:
+      - mathgraph/0dsa_0dsb_canonical_experiment
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  targeted-lean-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Lean and fetch Mathlib cache
+        uses: leanprover/lean-action@v1
+        with:
+          build: false
+          test: false
+          lint: false
+          use-mathlib-cache: true
+      - name: Elaborate the strengthened Stacks 0DSB consumer
+        run: lake build -j 2 StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke
+      - name: Confirm research patch scope
+        run: |
+          git diff --check HEAD^
+          git show --format='%H %s' --no-patch HEAD

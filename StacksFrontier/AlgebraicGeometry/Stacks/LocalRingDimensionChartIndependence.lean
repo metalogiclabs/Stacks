@@ -161,6 +161,7 @@ the two side conditions on `ν` already use. This is
 `AlgebraicGeometry.Stack.HasLocalRingDimension` with that identification fixed instead of
 existentially quantified; the quantified form does not determine `d`, by the counterexample in
 the module documentation. -/
+@[stacks 0DSA]
 def HasLocalRingDimensionAtSomeChart (𝒳 : AlgebraicStacks.{u, w} B S hS)
     (_h𝒳 : IsLocallyNoetherianStack.{u, w} B S hS 𝒳)
     (x : points B S hS 𝒳.val.val 𝒳.val.property)

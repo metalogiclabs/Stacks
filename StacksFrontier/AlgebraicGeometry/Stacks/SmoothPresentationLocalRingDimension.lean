@@ -50,7 +50,8 @@ implementation notes.
 
 **Stacks 0DSA** is the definition the two lemmas are for: the dimension of the local ring of `𝒳`
 at a finite type point `x` *is* `d ∈ 𝐙` when the equivalent conditions of Stacks 0DS9 hold at
-`x` and `d`. It is a relation between `x` and `d`, and that is how it is recorded here.
+`x` and `d`. The legacy relation below has an extra arbitrary chart equivalence, so it is not
+the faithful tagged definition; the corrected relation is in `LocalRingDimensionChartIndependence`.
 
 ## Main definitions
 
@@ -61,8 +62,8 @@ at a finite type point `x` *is* `d ∈ 𝐙` when the equivalent conditions of S
 * `AlgebraicGeometry.Stack.selfIntersectionDiagonalSquare` and
   `AlgebraicGeometry.Stack.selfIntersectionDiagonalMap`: the tautological 2-commutative square
   over the cospan `(f, f)` and the diagonal `e : U ⟶ R` it induces on representing presheaves.
-* `AlgebraicGeometry.Stack.HasLocalRingDimension`: **Stacks 0DSA**, that `d ∈ 𝐙` is the dimension
-  of the local ring of a locally Noetherian algebraic stack at a finite type point.
+* `AlgebraicGeometry.Stack.HasLocalRingDimension`: an **older, more permissive candidate** for
+  Stacks 0DSA, retained without the tag because its arbitrary chart equivalence can change `d`.
 
 ## Main results
 
@@ -141,12 +142,12 @@ additionally needs a smooth chart carrying a finite type point above `x`, the im
 **Stacks 06FX** that `AlgebraicGeometry.Stack.isFiniteTypePoint_of_exists_isClosed_smoothChart`
 does not prove — is stated here.
 
-**How Stacks 0DSA is recorded.** The source says that the dimension of the local ring at `x`
-*is* `d` when the conditions of Stacks 0DS9 are satisfied, so the definition is a relation
-between `x` and `d ∈ 𝐙` and `AlgebraicGeometry.Stack.HasLocalRingDimension` is a predicate whose
-body is condition (1) of Stacks 0DS9. No `ℤ`-valued function accompanies it: a function would
-have to come from uniqueness of `d`, and uniqueness is exactly the independence of the smooth
-chart, which is the half of Stacks 0DS9 that is not available. Local Noetherianity of `𝒳` and
+**Historical candidate for Stacks 0DSA.** The source says the dimension at `x` is `d` when
+the conditions of Stacks 0DS9 are satisfied. The old predicate
+`AlgebraicGeometry.Stack.HasLocalRingDimension` introduces an additional existential chart
+equivalence and is **not** the eventual faithful definition. The later relation
+`AlgebraicGeometry.Stack.HasLocalRingDimensionAtSomeChart` fixes that equivalence canonically;
+its uniqueness is proved in `LocalRingDimensionChartComparison`. Local Noetherianity of `𝒳` and
 finite-typeness of `x` are arguments of the predicate but are used in neither body, as in
 `AlgebraicGeometry.Stack.dimensionAtPoint` of Stacks 0AFN: they are what gives the defining
 condition content.
@@ -465,16 +466,20 @@ noncomputable abbrev selfIntersectionDiagonalMap
   representingMap B S hS (schemeStack.{u, w} B S hS U).val sq.pt.val (yoneda.obj U) R eU eR
     δ.hom.hom
 
-/-- **Stacks 0DSA.** The dimension of the local ring of a locally Noetherian algebraic stack `𝒳`
+/-- **Legacy candidate for Stacks 0DSA, not a single-valued dimension relation.**
+The dimension of the local ring of a locally Noetherian algebraic stack `𝒳`
 at a finite type point `x ∈ |𝒳|` *is* the integer `d` when condition (1) of Stacks 0DS9 holds:
 some scheme `U` of the site carries a smooth 1-morphism `f : U ⟶ 𝒳` and a finite type point `u`
 of `U` above `x` at which a presented self-intersection `R = U ×_𝒳 U`, with diagonal `e`, has
 `2 dim(𝒪_{U,ū}) - dim(𝒪_{R, e(ū)}) = d`.
 
-The source phrases the dimension as a relation between `x` and `d ∈ ℤ`, not as a function of `x`,
-and so does this: the value is pinned down by Stacks 0DS9, whose independence of the chart is not
-available here. Negative values occur (Stacks 0DS5), whence `ℤ`. -/
-@[stacks 0DSA]
+The source phrases the dimension as a relation between `x` and `d ∈ ℤ`, not as a function of `x`.
+However, the arbitrary existential chart equivalence `eV` here may transport the measured point
+without transporting the side condition; this relation is not necessarily single-valued.
+The faithful, chart-independent relation carrying tag 0DSA is
+`AlgebraicGeometry.Stack.HasLocalRingDimensionAtSomeChart`, defined in
+`LocalRingDimensionChartIndependence.lean`. Retained for compatibility, not as a Stacks tag.
+Negative values occur (Stacks 0DS5), whence `ℤ`. -/
 def HasLocalRingDimension (𝒳 : AlgebraicStacks.{u, w} B S hS)
     (_h𝒳 : IsLocallyNoetherianStack.{u, w} B S hS 𝒳)
     (x : points B S hS 𝒳.val.val 𝒳.val.property)
