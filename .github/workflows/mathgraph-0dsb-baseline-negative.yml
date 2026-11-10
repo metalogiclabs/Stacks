@@ -1,0 +1,45 @@
+name: MathGraph Stacks 0DSB original-type negative control
+
+on:
+  push:
+    branches:
+      - mathgraph/0dsb_canonical_negative_control
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native-negative-control:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Lean 4.35 and fetch Mathlib cache
+        uses: leanprover/lean-action@v1
+        with:
+          build: false
+          test: false
+          lint: false
+          use-mathlib-cache: true
+      - name: Confirm unchanged 0DSB fails canonical downstream contract
+        shell: bash
+        run: |
+          set +e
+          lake build StacksFrontier.AlgebraicGeometry.Stacks.MathGraph0DSBCanonicalSmoke > "$RUNNER_TEMP/mathgraph-baseline.log" 2>&1
+          status=$?
+          set -e
+          tail -n 100 "$RUNNER_TEMP/mathgraph-baseline.log"
+          if [ "$status" -eq 0 ]; then
+            echo "FAIL: unchanged 0DSB unexpectedly discharged the canonical consumer"
+            exit 1
+          fi
+          if ! grep -Eq 'type mismatch|application type mismatch' "$RUNNER_TEMP/mathgraph-baseline.log"; then
+            echo "UNKNOWN: build failed for a reason other than a Lean type mismatch"
+            exit 1
+          fi
+          if ! grep -Fq 'MathGraph0DSBCanonicalSmoke.lean' "$RUNNER_TEMP/mathgraph-baseline.log"; then
+            echo "UNKNOWN: mismatch was outside the expected downstream consumer"
+            exit 1
+          fi
+          echo "NEGATIVE CONTROL PASS: canonical consumer rejected the original 0DSB contract"
