@@ -80,8 +80,9 @@ the faithful tagged definition; the corrected relation is in `LocalRingDimension
 * `AlgebraicGeometry.Stack.exists_iff_forall_geometricPoint_hasChartLocalRingDimension`:
   **Stacks 0DS9** for the choice of geometric point — the existential and the universal condition
   over the geometric points above a point of the relation are equivalent.
-* `AlgebraicGeometry.Stack.exists_hasLocalRingDimension`: the definition of Stacks 0DSA is
-  satisfied by some integer at a point carrying a smooth chart with a finite type point above it.
+* `AlgebraicGeometry.Stack.exists_hasLocalRingDimension`: existence for the **legacy**
+  presentation-dependent relation. The canonical existence theorem is
+  `AlgebraicGeometry.Stack.exists_hasLocalRingDimensionAtSomeChart`.
 
 ## Implementation notes
 
@@ -504,10 +505,11 @@ def HasLocalRingDimension (𝒳 : AlgebraicStacks.{u, w} B S hS)
               (selfIntersectionDiagonalMap B S hS V g T Q eV eQ δ) ν) d
 
 include eU eR in
-/-- **The dimension of the local ring of Stacks 0DSA is realized by an integer** as soon as the
-point has a smooth chart with a finite type point above it: both local rings entering the
-invariant are Noetherian local rings, so Krull's height theorem makes the two dimensions
-finite. -/
+/-- **Existence for the legacy presentation-dependent relation.** The old predicate
+`HasLocalRingDimension` is satisfied by some integer when the point has a smooth chart with a
+finite type point above it: both local rings entering the invariant are Noetherian, so their
+dimensions are finite. This theorem does not establish the chart-independent relation of Stacks
+0DSA; that is `exists_hasLocalRingDimensionAtSomeChart`. -/
 theorem exists_hasLocalRingDimension (hf : AlgebraicStacks.IsSmooth B S hS f)
     (hsq : Bicategory.IsTwoFibreProduct sq)
     (h𝒳 : IsLocallyNoetherianStack.{u, w} B S hS 𝒳) (hR : IsAlgebraicSpace B S hS R)
