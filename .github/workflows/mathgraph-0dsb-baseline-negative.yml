@@ -158,7 +158,6 @@ jobs:
           echo 'Restored exact build checkpoint for original consumer; capture independently checks imports.'
 
       - name: Capture original native Lean JSON (only after imports built)
-        if: steps.deps.outputs.ready == 'true'
         shell: bash
         run: |
           python3 .github/scripts/mathgraph_0dsb_capture_v3.py --source original \
@@ -370,7 +369,6 @@ jobs:
           echo 'Restored exact repaired build checkpoint for native consumer; capture independently checks imports.'
 
       - name: Capture repaired native Lean JSON (only after imports rebuilt)
-        if: steps.deps.outputs.ready == 'true'
         shell: bash
         run: |
           python3 _mathgraph_verifier/.github/scripts/mathgraph_0dsb_capture_v3.py \
