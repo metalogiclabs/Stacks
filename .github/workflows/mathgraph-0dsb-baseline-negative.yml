@@ -1,8 +1,8 @@
-# One 10-minute import segment per source, each followed by a durable checkpoint. This is not proof verification by itself.
+# One 18-minute original import segment from a pinned V3.3 cache; checkpoint if controlled. Not proof by itself.
 # Native diagnostics run in separate jobs only if imports complete; timeout is UNKNOWN.
 # Only executes on the explicit original research branch.
 # The branch's existing cache is NOT accessible to a sibling branch.
-name: MathGraph Stacks 0DSB bounded structured native gate V3.3
+name: MathGraph Stacks 0DSB bounded structured native gate V3.4
 
 on:
   push:
@@ -48,22 +48,21 @@ jobs:
         with:
           path: .lake/build
           fail-on-cache-miss: true
-          key: mathgraph-stacks-0dsb-v33-original-${{ github.run_id }}-${{ github.run_attempt }}-restore
+          key: mathgraph-stacks-0dsb-v33-original-42931653472-1-s1
           restore-keys: |
-            mathgraph-stacks-0dsb-v33-original-
-            mathgraph-stacks-0dsb-v3-original-42910701527-1-s1
+            mathgraph-stacks-0dsb-v33-original-42931710380-1-s1
       - name: Require and record actual restored checkpoint key
         env:
           MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
         run: |
           case "$MATCHED_KEY" in
-            mathgraph-stacks-0dsb-v3-original-42910701527-1-s1|mathgraph-stacks-0dsb-v33-original-*) ;;
+            mathgraph-stacks-0dsb-v33-original-42931653472-1-s1|mathgraph-stacks-0dsb-v33-original-42931710380-1-s1) ;;
             *) echo "Unexpected or missing original cache key: $MATCHED_KEY; STOP / UNKNOWN"; exit 1 ;;
           esac
           echo "Restored original cache key: $MATCHED_KEY"
       # Two bounded segments, not the consumer target: imports can complete on
       # ORIGINAL source without the expected consumer mismatch terminating Lake.
-      - name: Compile ONLY imports (one controlled 10m segment)
+      - name: Compile ONLY imports (one controlled 18m segment)
         shell: bash
         id: deps
         run: |
@@ -71,7 +70,7 @@ jobs:
           # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
           # the bounded compiler process so timeout/kill status can be captured.
           set +e
-          timeout --verbose --signal=INT --kill-after=20s 10m lake build \
+          timeout --verbose --signal=INT --kill-after=20s 18m lake build \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
             > "$RUNNER_TEMP/original_segment1.log" 2>&1
@@ -98,12 +97,12 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .lake/build
-          key: mathgraph-stacks-0dsb-v33-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
+          key: mathgraph-stacks-0dsb-v34-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
       - name: Upload original bounded import evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mathgraph-stacks-v33-original-imports-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mathgraph-stacks-v34-original-imports-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/original_segment1.log
           if-no-files-found: warn
           retention-days: 14
@@ -151,7 +150,7 @@ jobs:
         with:
           path: .lake/build
           fail-on-cache-miss: true
-          key: mathgraph-stacks-0dsb-v33-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
+          key: mathgraph-stacks-0dsb-v34-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
       - name: Require exact native checkpoint
         run: |
           test -d .lake/build || { echo 'STOP / UNKNOWN: missing .lake/build'; exit 1; }
@@ -190,7 +189,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mathgraph-stacks-v33-original-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mathgraph-stacks-v34-original-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/mathgraph0dsb_original/
             ${{ runner.temp }}/original_gate.json
