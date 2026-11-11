@@ -1,7 +1,8 @@
-# Bounded research-only V3.2 native gate. This is not proof verification by itself.
+# One 10-minute import segment per source, each followed by a durable checkpoint. This is not proof verification by itself.
+# Native diagnostics run in separate jobs only if imports complete; timeout is UNKNOWN.
 # Only executes on the explicit original research branch.
 # The branch's existing cache is NOT accessible to a sibling branch.
-name: MathGraph Stacks 0DSB bounded structured native gate V3.2
+name: MathGraph Stacks 0DSB bounded structured native gate V3.3
 
 on:
   push:
@@ -20,6 +21,110 @@ jobs:
     name: Original pinned source (native structured negative control)
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    outputs:
+      ready: ${{ steps.deps.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Require full unchanged original source and identical consumer
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, '.github/scripts')
+          from mathgraph_0dsb_capture_v3 import preflight
+          print(preflight('original'))
+          PY
+      - name: Pin Lean and restore Mathlib dependencies
+        uses: leanprover/lean-action@v1
+        with:
+          build: false
+          test: false
+          lint: false
+          use-mathlib-cache: true
+      - name: Restore previous controlled original build checkpoint
+        id: restore
+        uses: actions/cache/restore@v4
+        with:
+          path: .lake/build
+          fail-on-cache-miss: true
+          key: mathgraph-stacks-0dsb-v33-original-${{ github.run_id }}-${{ github.run_attempt }}-restore
+          restore-keys: |
+            mathgraph-stacks-0dsb-v33-original-
+            mathgraph-stacks-0dsb-v3-original-42910701527-1-s1
+      - name: Require and record actual restored checkpoint key
+        env:
+          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+        run: |
+          case "$MATCHED_KEY" in
+            mathgraph-stacks-0dsb-v3-original-42910701527-1-s1|mathgraph-stacks-0dsb-v33-original-*) ;;
+            *) echo "Unexpected or missing original cache key: $MATCHED_KEY; STOP / UNKNOWN"; exit 1 ;;
+          esac
+          echo "Restored original cache key: $MATCHED_KEY"
+      # Two bounded segments, not the consumer target: imports can complete on
+      # ORIGINAL source without the expected consumer mismatch terminating Lake.
+      - name: Compile ONLY imports (one controlled 10m segment)
+        shell: bash
+        id: deps
+        run: |
+          set -uo pipefail
+          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
+          # the bounded compiler process so timeout/kill status can be captured.
+          set +e
+          timeout --verbose --signal=INT --kill-after=20s 10m lake build \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
+            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
+            > "$RUNNER_TEMP/original_segment1.log" 2>&1
+          rc=$?
+          set -e
+          # Only a native success or a timeout carrying GNU timeout's explicit
+          # signal receipt is an admissible checkpoint continuation. Never
+          # reclassify an unexplained exit 137 (or runner loss) as timeout.
+          if [ "$rc" -eq 0 ]; then
+            echo "Native segment completed successfully (exit 0)."
+          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
+               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/original_segment1.log"; then
+            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
+          else
+            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
+            tail -n 40 "$RUNNER_TEMP/original_segment1.log" || true
+            exit 1
+          fi
+          if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
+          echo "Segment 1 exit: $rc"; tail -n 15 "$RUNNER_TEMP/original_segment1.log"
+          if [ -d .lake/build ]; then du -sh .lake/build; fi
+          exit 0  # controlled incomplete compilation never means proof success
+      - name: Save snapshot after segment 1 (must see saved cache in logs)
+        uses: actions/cache/save@v4
+        with:
+          path: .lake/build
+          key: mathgraph-stacks-0dsb-v33-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
+      - name: Upload original bounded import evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathgraph-stacks-v33-original-imports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/original_segment1.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Reject unfinished original imports as UNKNOWN
+        if: always()
+        shell: bash
+        env:
+          IMPORT_READY: ${{ steps.deps.outputs.ready }}
+        run: |
+          if [ "$IMPORT_READY" != true ]; then
+            echo '::error::STOP / UNKNOWN — original imports not completed; cache save is not proof.'
+            exit 1
+          fi
+          echo 'Native original import build completed; separate native consumer job required.'
+
+  original_diagnostic:
+    name: Original pinned native Lean JSON consumer RED
+    needs: original
+    if: needs.original.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
     outputs:
       verdict: ${{ steps.verdict.outputs.verdict }}
     steps:
@@ -41,97 +146,17 @@ jobs:
           test: false
           lint: false
           use-mathlib-cache: true
-      - name: Restore newest original source snapshot
-        id: restore
+      - name: Restore exact completed original import build
         uses: actions/cache/restore@v4
         with:
           path: .lake/build
           fail-on-cache-miss: true
-          key: mathgraph-stacks-0dsb-v3-original-${{ github.run_id }}-${{ github.run_attempt }}-restore
-          restore-keys: |
-            mathgraph-stacks-0dsb-v3-original-
-            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2
-      - name: Require and record actual restored checkpoint key
-        env:
-          MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
+          key: mathgraph-stacks-0dsb-v33-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
+      - name: Require exact native checkpoint
         run: |
-          case "$MATCHED_KEY" in
-            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2|mathgraph-stacks-0dsb-v3-original-*) ;;
-            *) echo "Unexpected or missing original cache key: $MATCHED_KEY; STOP / UNKNOWN"; exit 1 ;;
-          esac
-          echo "Restored original cache key: $MATCHED_KEY"
-      # Two bounded segments, not the consumer target: imports can complete on
-      # ORIGINAL source without the expected consumer mismatch terminating Lake.
-      - name: Compile ONLY imports (segment 1, 12m)
-        shell: bash
-        run: |
-          set -uo pipefail
-          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
-          # the bounded compiler process so timeout/kill status can be captured.
-          set +e
-          timeout --verbose --signal=INT --kill-after=20s 12m lake build \
-            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
-            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
-            > "$RUNNER_TEMP/original_segment1.log" 2>&1
-          rc=$?
-          set -e
-          # Only a native success or a timeout carrying GNU timeout's explicit
-          # signal receipt is an admissible checkpoint continuation. Never
-          # reclassify an unexplained exit 137 (or runner loss) as timeout.
-          if [ "$rc" -eq 0 ]; then
-            echo "Native segment completed successfully (exit 0)."
-          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
-               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/original_segment1.log"; then
-            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
-          else
-            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
-            tail -n 40 "$RUNNER_TEMP/original_segment1.log" || true
-            exit 1
-          fi
-          echo "Segment 1 exit: $rc"; tail -n 15 "$RUNNER_TEMP/original_segment1.log"
-          if [ -d .lake/build ]; then du -sh .lake/build; fi
-          exit 0  # controlled incomplete compilation never means proof success
-      - name: Save snapshot after segment 1 (must see saved cache in logs)
-        uses: actions/cache/save@v4
-        with:
-          path: .lake/build
-          key: mathgraph-stacks-0dsb-v3-original-${{ github.run_id }}-${{ github.run_attempt }}-s1
-      - name: Compile ONLY imports (segment 2, 38m)
-        shell: bash
-        id: deps
-        run: |
-          set -uo pipefail
-          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
-          # the bounded compiler process so timeout/kill status can be captured.
-          set +e
-          timeout --verbose --signal=INT --kill-after=20s 38m lake build \
-            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
-            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
-            > "$RUNNER_TEMP/original_segment2.log" 2>&1
-          rc=$?
-          set -e
-          # Only a native success or a timeout carrying GNU timeout's explicit
-          # signal receipt is an admissible checkpoint continuation. Never
-          # reclassify an unexplained exit 137 (or runner loss) as timeout.
-          if [ "$rc" -eq 0 ]; then
-            echo "Native segment completed successfully (exit 0)."
-          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
-               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/original_segment2.log"; then
-            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
-          else
-            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
-            tail -n 40 "$RUNNER_TEMP/original_segment2.log" || true
-            exit 1
-          fi
-          echo "Segment 2 exit: $rc"; tail -n 15 "$RUNNER_TEMP/original_segment2.log"
-          if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
-          if [ -d .lake/build ]; then du -sh .lake/build; fi
-          exit 0
-      - name: Save snapshot after segment 2
-        uses: actions/cache/save@v4
-        with:
-          path: .lake/build
-          key: mathgraph-stacks-0dsb-v3-original-${{ github.run_id }}-${{ github.run_attempt }}-s2
+          test -d .lake/build || { echo 'STOP / UNKNOWN: missing .lake/build'; exit 1; }
+          echo 'Restored exact build checkpoint for original consumer; capture independently checks imports.'
+
       - name: Capture original native Lean JSON (only after imports built)
         if: steps.deps.outputs.ready == 'true'
         shell: bash
@@ -166,12 +191,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mathgraph-stacks-v3-original-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mathgraph-stacks-v33-original-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/mathgraph0dsb_original/
             ${{ runner.temp }}/original_gate.json
-            ${{ runner.temp }}/original_segment1.log
-            ${{ runner.temp }}/original_segment2.log
           if-no-files-found: warn
           retention-days: 14
       - name: Preserve exact original evidence summary
@@ -193,10 +216,12 @@ jobs:
 
   repaired:
     name: Repaired pinned source (native structured positive control)
-    needs: original
-    if: needs.original.outputs.verdict == 'original-red'
+    needs: original_diagnostic
+    if: needs.original_diagnostic.outputs.verdict == 'original-red'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 35
+    outputs:
+      ready: ${{ steps.deps.outputs.ready }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -224,34 +249,35 @@ jobs:
           test: false
           lint: false
           use-mathlib-cache: true
-      - name: Restore latest repaired snapshot or compatible original build objects
+      - name: Restore latest repaired or compatible original checkpoint
         id: restore
         uses: actions/cache/restore@v4
         with:
           path: .lake/build
           fail-on-cache-miss: true
-          key: mathgraph-stacks-0dsb-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}-restore
+          key: mathgraph-stacks-0dsb-v33-repaired-${{ github.run_id }}-${{ github.run_attempt }}-restore
           restore-keys: |
-            mathgraph-stacks-0dsb-v3-repaired-
-            mathgraph-stacks-0dsb-v3-original-
-            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2
+            mathgraph-stacks-0dsb-v33-repaired-
+            mathgraph-stacks-0dsb-v33-original-
+            mathgraph-stacks-0dsb-v3-original-42910701527-1-s1
       - name: Require and record actual restored checkpoint key
         env:
           MATCHED_KEY: ${{ steps.restore.outputs.cache-matched-key }}
         run: |
           case "$MATCHED_KEY" in
-            mathgraph-stacks-0dsb-5ed82d-smoke6f6c-v1-original-42794777113-2|mathgraph-stacks-0dsb-v3-original-*|mathgraph-stacks-0dsb-v3-repaired-*) ;;
+            mathgraph-stacks-0dsb-v3-original-42910701527-1-s1|mathgraph-stacks-0dsb-v33-original-*|mathgraph-stacks-0dsb-v33-repaired-*) ;;
             *) echo "Unexpected or missing repaired-compatible cache key: $MATCHED_KEY; STOP / UNKNOWN"; exit 1 ;;
           esac
           echo "Restored repaired-compatible cache key: $MATCHED_KEY"
-      - name: Rebuild repaired imports (segment 1, 12m)
+      - name: Rebuild repaired imports (one controlled 10m segment)
         shell: bash
+        id: deps
         run: |
           set -uo pipefail
           # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
           # the bounded compiler process so timeout/kill status can be captured.
           set +e
-          timeout --verbose --signal=INT --kill-after=20s 12m lake build \
+          timeout --verbose --signal=INT --kill-after=20s 10m lake build \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
             StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
             > "$RUNNER_TEMP/repaired_segment1.log" 2>&1
@@ -270,6 +296,7 @@ jobs:
             tail -n 40 "$RUNNER_TEMP/repaired_segment1.log" || true
             exit 1
           fi
+          if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
           echo "Repaired segment 1 exit: $rc"; tail -n 15 "$RUNNER_TEMP/repaired_segment1.log"
           if [ -d .lake/build ]; then du -sh .lake/build; fi
           exit 0
@@ -277,43 +304,71 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .lake/build
-          key: mathgraph-stacks-0dsb-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}-s1
-      - name: Rebuild repaired imports (segment 2, 38m)
+          key: mathgraph-stacks-0dsb-v33-repaired-${{ github.run_id }}-${{ github.run_attempt }}-s1
+      - name: Upload repaired bounded import evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mathgraph-stacks-v33-repaired-imports-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/repaired_segment1.log
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Reject unfinished repaired imports as UNKNOWN
+        if: always()
         shell: bash
-        id: deps
+        env:
+          IMPORT_READY: ${{ steps.deps.outputs.ready }}
         run: |
-          set -uo pipefail
-          # GitHub's `shell: bash` includes implicit -e. Disable it ONLY around
-          # the bounded compiler process so timeout/kill status can be captured.
-          set +e
-          timeout --verbose --signal=INT --kill-after=20s 38m lake build \
-            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionVersal \
-            StacksFrontier.AlgebraicGeometry.Stacks.LocalRingDimensionChartComparison \
-            > "$RUNNER_TEMP/repaired_segment2.log" 2>&1
-          rc=$?
-          set -e
-          # Only a native success or a timeout carrying GNU timeout's explicit
-          # signal receipt is an admissible checkpoint continuation. Never
-          # reclassify an unexplained exit 137 (or runner loss) as timeout.
-          if [ "$rc" -eq 0 ]; then
-            echo "Native segment completed successfully (exit 0)."
-          elif { [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; } && \
-               grep -Eq '^timeout: sending signal (INT|KILL) to command ' "$RUNNER_TEMP/repaired_segment2.log"; then
-            echo "Native segment ended at controlled timeout (exit $rc); proof UNKNOWN."
-          else
-            echo "::error::Uncontrolled segment status $rc; STOP / UNKNOWN; see logged diagnostic."
-            tail -n 40 "$RUNNER_TEMP/repaired_segment2.log" || true
+          if [ "$IMPORT_READY" != true ]; then
+            echo '::error::STOP / UNKNOWN — repaired imports not completed; cache save is not proof.'
             exit 1
           fi
-          echo "Repaired segment 2 exit: $rc"; tail -n 15 "$RUNNER_TEMP/repaired_segment2.log"
-          if [ "$rc" -eq 0 ]; then echo 'ready=true' >> "$GITHUB_OUTPUT"; fi
-          if [ -d .lake/build ]; then du -sh .lake/build; fi
-          exit 0
-      - name: Save repaired snapshot after segment 2
-        uses: actions/cache/save@v4
+          echo 'Native repaired import build completed; separate native consumer job required.'
+
+  repaired_diagnostic:
+    name: Repaired pinned native JSON GREEN and both axiom checks
+    needs: repaired
+    if: needs.repaired.outputs.ready == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: e1199c53e4822beaaaca1bf801f66448b5e69e7f
+          fetch-depth: 0
+      # Fetch verifier tools by the *immutable triggering workflow commit* into a
+      # separate directory; the repaired checkout itself remains byte-for-byte pinned.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: _mathgraph_verifier
+          fetch-depth: 1
+      - name: Require exact repair source, identical consumer and frozen helper version
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, '_mathgraph_verifier/.github/scripts')
+          from mathgraph_0dsb_capture_v3 import preflight
+          print(preflight('repaired'))
+          PY
+      - name: Pin Lean and restore Mathlib dependencies
+        uses: leanprover/lean-action@v1
+        with:
+          build: false
+          test: false
+          lint: false
+          use-mathlib-cache: true
+      - name: Restore exact completed repaired import build
+        uses: actions/cache/restore@v4
         with:
           path: .lake/build
-          key: mathgraph-stacks-0dsb-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}-s2
+          fail-on-cache-miss: true
+          key: mathgraph-stacks-0dsb-v33-repaired-${{ github.run_id }}-${{ github.run_attempt }}-s1
+      - name: Require exact native checkpoint
+        run: |
+          test -d .lake/build || { echo 'STOP / UNKNOWN: missing .lake/build'; exit 1; }
+          echo 'Restored exact repaired build checkpoint for native consumer; capture independently checks imports.'
+
       - name: Capture repaired native Lean JSON (only after imports rebuilt)
         if: steps.deps.outputs.ready == 'true'
         shell: bash
@@ -344,12 +399,10 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mathgraph-stacks-v3-repaired-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mathgraph-stacks-v33-repaired-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/mathgraph0dsb_repaired/
             ${{ runner.temp }}/repaired_gate.json
-            ${{ runner.temp }}/repaired_segment1.log
-            ${{ runner.temp }}/repaired_segment2.log
           if-no-files-found: warn
           retention-days: 14
       - name: State repaired qualification boundary
